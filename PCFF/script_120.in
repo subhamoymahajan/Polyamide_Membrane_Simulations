@@ -1,0 +1,113 @@
+# Dec 28, 2020
+# RO membrane desalination, changing membrane thickness and allowing membrane deformation
+
+# set up the pressure
+# Let f be the magnitude of the LAMMPS force variable using real units (kcal / Angstrom-mol).
+variable p1 equal 1200*4.0025e-5 # Force equivalent to 1200 atm
+variable p2 equal -4.0025e-5 # Force equivalent to 1atm
+
+# System setup
+atom_style  full
+units   real
+dimension 3
+boundary p p f
+neighbor        2.0 bin
+neigh_modify	every 1 delay 0 check yes
+
+# Define interaction parameters
+pair_style       lj/class2/coul/long 10.0
+pair_modify      shift no mix sixthpower
+kspace_style     pppm 1.0e-4
+kspace_modify    slab 3.0
+bond_style       class2
+angle_style      class2
+dihedral_style   class2
+improper_style   class2
+special_bonds    lj 0 0 1 coul 0 0 1 dihedral yes
+
+# Read/analyze init geometry
+read_data RO_water_nvt2.data
+read_dump NVT2/dynamics.90460000.lammpstrj 90460000 x y z vx vy vz box yes 
+read_dump piston_120_dynamics/dynamics.190105000.lammpstrj 190105000 x y z vx vy vz box yes
+#read_dump nvt_dynamics/dynamics.${rt}.lammpstrj ${rt} x y z q  box yes 
+variable natoms equal "count(all)" 
+
+#variable        rt equal 20000000
+#read_dump       dynamics.${rt}.lammpstrj ${rt} x y z box yes
+
+# ------------- Regions and Groups ---------------- 
+group carbon    	type 2        # Membrane and piston carbon atoms
+group ox        	type 10				# Water oxygen
+group hy        	type 7				# Water hydrogen
+
+# Defining the groups	
+group piston1 id 1:836 # whole piston1 (carbon) at z=0
+group piston2 id 15597:16432 # whole piston2 (carbon) at z=144
+group bothpistons  union piston1 piston2
+
+# Defining water groups
+group water			union ox hy
+group notwater	subtract all water
+
+# define the membrane atoms to be fixed
+variable zpiston1 equal xcm(piston1,z) #z-com of piston1 at z=0
+variable zpiston2 equal xcm(piston2,z) #z-com of piston2 at z=144
+#dvariable zmembrane1 equal (${zpiston1}+${zpiston2})/2+10.0 #?
+variable zmin equal ${zpiston1}+60.0
+#variable zmax equal ${zpiston2}-30.0
+variable zmax equal 152.252
+
+group fixmematoms id 878 935 958 1785 2197 3098 3368 4779 5372 5381 6403 6901 6908 6927 7104 7141 7148 8151 9092 9361 10005 10049 10067 10106 10577 10722 10964 13209 14428 14437 14440 15109 15479 15532
+region destination block INF INF INF INF ${zmax} INF units box
+variable ndest_water equal "count(ox,destination)"
+
+group membrane_atoms     subtract all bothpistons water
+#group membrane1_atoms    intersect membrane1zone membrane_atoms 
+variable a equal count(membrane_atoms)
+print "The total membrane atom number is now $a"
+
+variable b equal count(fixmematoms)
+print "The fixed membrane atom number is now $b"
+
+group membrane1_free subtract membrane_atoms fixmematoms
+
+# define the wall to prevent the penetration
+fix wallhi all wall/lj93 zhi EDGE 0.0130000000  1.0980000000 2 units box
+fix walllo all wall/lj93 zlo EDGE 0.0130000000  1.0980000000 2 units box
+
+# Defining group of atoms in Nose-Hoover thermostat
+group thermostat_target union water membrane1_free piston1 piston2
+group relax_target union water membrane1_free
+
+
+# --------------balance the CPU load-----------------
+balance 1.0 shift xyz 20 1.1
+fix 21 all balance 100000 1.0 shift xyz 20 1.1 out tmp.balance
+
+# -------------initialization-----------------
+fix freezemem fixmematoms setforce 0.0 0.0 0.0
+velocity fixmematoms set 0.0 0.0 0.0 units box
+#velocity thermostat_target create 300.0 4928459 dist gaussian mom yes rot yes units box
+
+# ------------- Equilibration ----------------
+fix pistonkeep bothpistons setforce 0.0 0.0 NULL
+#velocity bothpistons set 0.0 0.0 0.0 units box
+
+# Squeezing water between pistons (150 MPa each)
+fix piston1thrust piston1 aveforce NULL NULL ${p1}
+fix piston2thrust piston2 aveforce NULL NULL ${p2}
+#fix 1 water shake 1.0e-4 100 0 b 1 a 1
+fix NVTequilib thermostat_target nvt temp 300 300 $(100.0*dt)
+timestep 1.0
+# Equilibriate for seed length: 40, 50, 60 ps
+fix countall all ave/time 1 1 1000 v_ndest_water v_zpiston1 v_zpiston2 file water_transport_120b.dat
+thermo_style custom step vol temp density enthalpy press etotal evdwl ecoul ebond eangle edihed eimp
+restart 100000 piston_120/tmp.restart
+dump    fulldump     all custom 5000 piston_120_dynamics/dynamics.*.lammpstrj id mol type q xu yu zu vx vy vz fx fy fz ix iy iz
+dump_modify fulldump sort id
+log piston_120.log
+thermo 1000
+run     355000
+write_data RO_water_piston_120.data
+
+
