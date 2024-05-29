@@ -1,0 +1,108 @@
+########################################
+# LAMMPS INPUT SCRIPT
+# Input file for uniaxial tensile loading of single crystal aluminum
+# Mark Tschopp
+
+
+# System setup
+atom_style  full
+units   real
+dimension 3
+boundary p p p
+neighbor        2.0 bin
+neigh_modify	every 1 delay 0 check yes
+
+# Define interaction parameters
+pair_style       lj/class2/coul/long 10.0
+pair_modify      shift no mix sixthpower
+kspace_style     pppm 1.0e-4
+kspace_modify    mesh 24 24 24 order 4
+#kspace_modify    slab 3.0
+bond_style       class2
+angle_style      class2
+dihedral_style   class2
+improper_style   class2
+special_bonds    lj 0 0 1 coul 0 0 1 dihedral yes
+
+##Read/analyze init geometry
+#read_data 8x8x8mem_pcff.data
+### Minimize
+##
+##minimize 1.0e-4 1.0e-6 1000 1000
+##write_data em.data
+##read_data em.data
+##thermo_style one       
+#thermo 10
+#run 0
+#minimize 1.0e-4 1.0e-6 1000 1000
+#
+## relax the water and solute
+#fix fxnve  all  nve/limit  0.1
+#fix fxtem  all  langevin 550.0 550.0 $(100.0*dt) 699483
+#timestep 1.0
+##log em2.log
+#run 40000
+#unfix fxtem
+#unfix fxnve
+#######################################
+## EQUILIBRATION
+#read_data RO_water_em.data
+#timestep 0.01
+#velocity all create 550 12345 mom yes rot no
+#fix 1 all temp/berendsen 550 550 10000
+#fix 2 all press/berendsen iso 1 1 1000
+#
+#
+## Set thermo output
+#thermo 100
+#thermo_style custom step lx ly lz press pxx pyy pzz pe temp
+#variable totmass equal mass(all)
+#variable density equal v_totmass/vol  
+#variable temperature equal temp 
+#log npt_equil2.log
+## Run for at least 10 picosecond (assuming 1 fs timestep)
+#run 2000
+#unfix 1
+#unfix 2
+#
+#write_data npt_equil2_0.data
+###########################################################
+read_data npt_equil2_3.data
+
+#timestep 1.0
+#velocity all create 550 12345 mom yes rot no
+#fix 1 all temp/berendsen 550 550 10000
+#fix 2 all press/berendsen iso 1 1 1000
+#
+#
+## Set thermo output
+#thermo 100
+#thermo_style custom step lx ly lz press pxx pyy pzz pe temp
+#variable totmass equal mass(all)
+#variable density equal v_totmass/vol  
+#variable temperature equal temp 
+#log npt_equil2.log
+## Run for at least 10 picosecond (assuming 1 fs timestep)
+#run 200000
+#unfix 1
+#unfix 2
+#write_data npt_equil2.log
+## Store final cell length for strain calculations
+##
+#reset_timestep 0
+timestep 1.0
+#fix 1 all npt temp 300 300 100 iso 0 0 1 drag 1 
+fix 1 all npt temp 550 550 100 iso 1 1 1000
+# Set thermo output
+thermo 100
+thermo_style custom step lx ly lz press pxx pyy pzz pe temp
+log npt2.log
+
+# Run for at least 10 picosecond (assuming 1 fs timestep)
+run 20000000
+unfix 1
+
+write_data npt2.data
+
+
+

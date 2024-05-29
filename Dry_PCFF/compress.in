@@ -1,0 +1,86 @@
+########################################
+# LAMMPS INPUT SCRIPT
+# Input file for uniaxial tensile loading of single crystal aluminum
+# Mark Tschopp
+
+
+# System setup
+atom_style  full
+units   real
+dimension 3
+boundary p p p
+neighbor        3.0 bin
+neigh_modify	every 1 delay 0 check yes
+
+# Define interaction parameters
+pair_style       lj/class2/coul/long 10.0
+pair_modify      shift no mix sixthpower
+kspace_style     pppm 1.0e-4
+kspace_modify    mesh 24 24 24 order 4
+#kspace_modify    slab 3.0
+bond_style       class2
+angle_style      class2
+dihedral_style   class2
+improper_style   class2
+special_bonds    lj 0 0 1 coul 0 0 1 dihedral yes
+
+# Read/analyze init geometry
+#read_data 8x8x8mem_pcff.data
+#
+#######################################
+## EQUILIBRATION
+#reset_timestep 0
+#timestep 1.0
+#velocity all create 300 12345 mom yes rot no
+#fix 1 all npt temp 300 300 100 iso 0 0 1 drag 1 
+#
+## Set thermo output
+#thermo 100
+#thermo_style custom step lx ly lz press pxx pyy pzz pe temp
+#
+## Run for at least 10 picosecond (assuming 1 fs timestep)
+#run 1000000
+#unfix 1
+#
+## Store final cell length for strain calculations
+read_data npt.data
+variable tmp equal "lz"
+variable L0 equal ${tmp}
+print "Initial Length, L0: ${L0}"
+#write_data npt_equil.data
+
+######################################
+# DEFORMATION
+reset_timestep 0
+
+fix 1 all npt temp 300 300 100 x 0 0 1 y 0 0 1 drag 1
+variable srate equal -1.5e-3 #Ang/ps
+variable srate1 equal "v_srate *0.001/v_L0" #fs^{-1} strain
+#variable srate1 equal "v_srate / 1.0e12"
+fix 2 all deform 1 z erate ${srate1} units box remap x
+
+# Output strain and stress info to file
+# for units metal, pressure is in [bars] = 100 [kPa] = 1/10000 [GPa]
+# p2, p3, p4 are in GPa
+variable strain equal "(lz - v_L0)/v_L0"
+variable p1 equal "v_strain"
+variable p2 equal "-pxx/10000"
+variable p3 equal "-pyy/10000"
+variable p4 equal "-pzz/10000"
+fix def1 all print 100 "${p1} ${p2} ${p3} ${p4}" file compress_100.def1.txt screen no
+
+# Use cfg for AtomEye
+#dump 1 all cfg 250 dump.tens_*.cfg mass type xs ys zs c_csym c_peratom fx fy fz
+#dump_modify 1 element Al
+
+# Display thermo
+thermo 1000
+restart 100000 compress/tmp.restart
+dump    fulldump     all custom 5000 compress/dynamics.*.lammpstrj id mol type q xu yu zu vx vy vz fx fy fz ix iy iz
+thermo_style custom step v_strain temp v_p2 v_p3 v_p4 ke pe press
+log compress.log
+run 20000000
+
+######################################
+# SIMULATION DONE
+print "All done"
