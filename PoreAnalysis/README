@@ -1,0 +1,39 @@
+# Building C++ codes
+
+1. g++ (Tested on 11.4.0)
+2. boost/graph  (Tested on Boost 1.85)
+   a. https://www.boost.org/doc/libs/1_79_0/more/getting_started/unix-variants.html : Download a version. 
+   b. Follow build instructions. 
+	E.g., go too tools/build. Run boostrap.sh. Run "b2 install --prefix=PREFIX" (replace PREFIX with installation directory). Add PREFIX/bin to PATH.
+3. Build local binaries of cpp files.
+g++ -o pore.out -L[PREFIX]/lib -lboost_graph pore_analyze2.cpp
+g++ -o pore_z.out poro_z.cpp
+
+# Usage 
+
+## Case 1: The structure file contains the original structure + its reflection (combined.xyz)
+a) Pore classification:
+"./pore.out -f nitrogen_network.grd -c 1.4 -o foo.out -r 2" 
+
+"-r 2" is used to indicate the system was duplicated and reflected along z-axis. The code will now ignore the repeated data.
+"-c 1.4" is the spherical probe radius in Angstrom to be used.
+
+Outputs: [surf/vol]_[mem_spanning/wat_acc/wat_inacc].gro 
+In vol*.gro all voxel size is 0.4 Ang (Default precision of Poreblazer is 0.2 Ang). Change "fac=n" in the cpp to reduce precision to 0.2*n. Voxels with nearest atom > cutoff is kept.
+mem_spanning: Pore voxels that spans in x,y,and z direction (95% of the dimension has connected pore voxels)
+wat_acc: Pore voxels that are accessible along 
+
+From vol*.gro all voxels that are surrounded by voxels   
+
+b) Porosity profile
+"./pore_z.out -f nitrogen_network.grd -c 1.4 -r 2 -o foo2.out" generates output poro_z.dat [The porosity is generated for the reflected system... Verify based on density profiles]
+
+Using the cutoff 1.4 Ang generates water-occupiable porosity profile.
+Using a cutoff 1E-6 Ang generates geometric porosity profile.
+Note: Geometric porosity will always include pores that cannot be occupied by water.
+
+Irrespective of the reflection direction, porosity profile is generated for z-axis.
+
+## Case 2: The structure file only contains the original structure.
+Do not use "-r " option
+
